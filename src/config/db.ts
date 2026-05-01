@@ -19,7 +19,7 @@ export const prisma = new PrismaClient({
       ? ["query", "info", "warn", "error"]
       : ["warn", "error"],
 });
-const connectDB = async () => {
+export const connectDB = async () => {
   try {
     await prisma.$connect();
     console.log("✅ Database connected successfully via Prisma");
@@ -30,7 +30,7 @@ const connectDB = async () => {
   }
 };
 
-const disconnectDB = async () => {
+export const disconnectDB = async () => {
   try {
     await prisma.$disconnect();
     console.log("✅ Database disconnected successfully via Prisma");
@@ -39,5 +39,3 @@ const disconnectDB = async () => {
     console.error(`❌ Database disconnection failed: ${message}`);
   }
 };
-
-export default { prisma, connectDB, disconnectDB };
