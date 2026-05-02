@@ -6,8 +6,433 @@
 generator client {
   provider = "prisma-client-js"
   output   = "../src/generated/prisma"
+
 }
 
 datasource db {
   provider = "postgresql"
+}
+
+
+model User {
+  id String @id @default(cuid())
+  email String @unique
+  password String
+  firstName String
+  lastName String
+  phoneNumber String?
+  role UserRole @default(MERCHANT)
+  twofactorEnabled Boolean @default(false)
+  twofactorSecret String?
+  resetToken String?
+  resetTokenExpiresAt DateTime? 
+  emailVerificationToken String?
+  emailVerificationTokenExpiresAt DateTime?
+  failedLoginAttempts Int @default(0)
+  lockedUntil DateTime?
+  isEmailVerified Boolean @default(false)
+  refreshTokens RefreshToken[]
+  auditLogs AuditLog[]
+  stores Store[]
+  isActive Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@map("users")
+}
+
+enum UserRole {
+  MERCHANT
+  SUPER_ADMIN
+}
+
+model Store {
+  id String @id @default(cuid())
+  name String
+  slug String @unique
+  description String?
+  logo String?
+  currency String @default("NGN")
+  active Boolean @default(true)
+  plan StorePlan @default(FREE)
+  ownerId String
+  owner User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  products Product[]
+  orders Order[]
+  categories Category[]
+  customers StoreCustomer[]
+  apiKeys ApiKey[]
+  notifications Notification[]
+  auditLogs AuditLog[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([ownerId])
+  @@index([slug, active])
+  @@map("stores")
+}
+
+enum StorePlan {
+  FREE
+  BASIC
+  PRO
+  ENTERPRISE
+}
+
+model StoreCustomer {
+  id String @id @default(cuid())
+  email String 
+  phoneNumber String?
+  firstName String?
+  lastName String?
+  password String?
+  isActive Boolean @default(true)
+  isEmailVerified Boolean @default(false)
+  storeId String
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  orders Order[]
+  addresses Address[]
+  refreshTokens RefreshToken[]
+  resetToken String?
+  resetTokenExpiresAt DateTime? 
+  emailVerificationToken String?
+  emailVerificationTokenExpiresAt DateTime?
+  failedLoginAttempts Int @default(0)
+  lockedUntil DateTime?
+  twofactorEnabled Boolean @default(false)
+  twofactorSecret String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+@@unique([storeId, email]) 
+  @@index([storeId])
+  @@map("store_customers")
+}
+
+model RefreshToken {
+  id String @id @default(cuid())
+  tokenHash String @unique
+  userId String?
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+  storeId String //this is for the super admin to login to the store
+  customerId String?
+  customer StoreCustomer? @relation(fields: [customerId], references: [id], onDelete: Cascade) //this is for the customer to login to the store
+  family String
+  used Boolean @default(false)
+  revoked Boolean @default(false)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([tokenHash, family])
+  @@map("refresh_tokens")
+}
+
+model ApiKey {
+  id          String    @id @default(cuid())
+  name        String                    // e.g. "Production integration"
+  keyHash     String    @unique         // SHA-256 of key — never store raw
+  prefix      String                    // first 8 chars, shown in UI (e.g. "sk_live_ab12")
+  storeId     String
+  store       Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  scopes      String[]                  // ["products:read", "orders:write"]
+  active      Boolean   @default(true)
+  lastUsedAt  DateTime?
+  expiresAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([storeId, active])
+  @@map("api_keys")
+}
+
+model Category {
+  id        String    @id @default(cuid())
+  name      String
+  slug      String
+  image     String?
+  parentId  String?                     // self-relation for nested categories
+  parent    Category? @relation("CategoryTree", fields: [parentId], references: [id])
+  children  Category[] @relation("CategoryTree")
+  storeId   String
+  store     Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  products  Product[]
+  createdAt DateTime  @default(now())
+
+  @@unique([storeId, slug])
+  @@index([storeId])
+  @@map("categories")
+}
+model Product {
+  id           String    @id @default(cuid())
+  name         String
+  slug         String
+  description  String?   @db.Text
+  price        Decimal   @db.Decimal(12, 2)    // Decimal, not Float — no floating point errors
+  comparePrice Decimal?  @db.Decimal(12, 2)
+  sku          String?
+  barcode      String?
+  images       String[]                          // Cloudinary URLs
+  published    Boolean   @default(false)
+  featured     Boolean   @default(false)
+  tags         String[]
+  weight       Float?                            // grams, for shipping
+  storeId      String
+  store        Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  categoryId   String?
+  category     Category? @relation(fields: [categoryId], references: [id])
+  variants     ProductVariant[]
+  orderItems   OrderItem[]
+  inventoryLogs InventoryLog[]
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@unique([storeId, slug])
+  @@index([storeId, published])
+  @@index([storeId, featured])
+  @@map("products")
+}
+
+model ProductVariant {
+  id         String    @id @default(cuid())
+  productId  String
+  product    Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  name       String                    // e.g. "Red / XL"
+  sku        String?
+  price      Decimal?  @db.Decimal(12, 2)  // null = inherits product price
+  stock      Int       @default(0)
+  images     String[]
+  options    Json                      // { color: "Red", size: "XL" }
+  active     Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([productId])
+  @@map("product_variants")
+}
+
+model InventoryLog {
+  id          String    @id @default(cuid())
+  productId   String
+  product     Product   @relation(fields: [productId], references: [id])
+  variantId   String?
+  storeId     String
+  changeType  InventoryChangeType
+  delta       Int                   // positive = stock in, negative = stock out
+  stockBefore Int
+  stockAfter  Int
+  reason      String?               // "ORDER-00042", "MANUAL_ADJUSTMENT", "RETURN"
+  orderId     String?
+  performedBy String?               // userId or "system"
+  createdAt   DateTime @default(now())
+
+  @@index([productId])
+  @@index([storeId, createdAt])
+  @@map("inventory_logs")
+}
+
+enum InventoryChangeType { 
+  SALE
+  RETURN
+  MANUAL_ADJUSTMENT
+  RESTOCK
+  RESERVED
+  RELEASED
+}
+
+model Address {
+  id         String    @id @default(cuid())
+  line1      String
+  line2      String?
+  city       String
+  state      String
+  postalCode String?
+  country    String    @default("Nigeria")
+  isDefault  Boolean   @default(false)
+  customerId String
+  customer   StoreCustomer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  orders     Order[]
+  createdAt  DateTime  @default(now())
+
+  @@index([customerId])
+  @@map("addresses")
+}
+
+model Order {
+  id              String        @id @default(cuid())
+  orderNumber     String        @unique   // human-readable: "TCV-00042"
+  status          OrderStatus   @default(PENDING)
+  paymentStatus   PaymentStatus @default(UNPAID)
+  subtotal        Decimal       @db.Decimal(12, 2)
+  discount        Decimal       @db.Decimal(12, 2) @default(0)
+  shippingFee     Decimal       @db.Decimal(12, 2) @default(0)
+  tax             Decimal       @db.Decimal(12, 2) @default(0)
+  total           Decimal       @db.Decimal(12, 2)
+  currency        String        @default("NGN")
+  notes           String?
+  metadata        Json?                           // extensible without schema changes
+  storeId         String
+  store           Store         @relation(fields: [storeId], references: [id])
+  customerId      String
+  customer        StoreCustomer @relation(fields: [customerId], references: [id])
+  addressId       String?
+  address         Address?      @relation(fields: [addressId], references: [id])
+  items           OrderItem[]
+  payments        Payment[]
+  notifications   Notification[]
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([storeId, status])
+  @@index([storeId, paymentStatus])
+  @@index([storeId, createdAt])
+  @@index([customerId])
+  @@map("orders")
+}
+
+enum OrderStatus {
+  PENDING 
+  CONFIRMED 
+  PROCESSING 
+  SHIPPED 
+  DELIVERED 
+  CANCELLED 
+  REFUNDED
+}
+enum PaymentStatus {
+  UNPAID
+  PAID
+  PARTIALLY_PAID
+  REFUNDED
+}
+
+model OrderItem {
+  id         String    @id @default(cuid())
+  quantity   Int
+  unitPrice  Decimal   @db.Decimal(12, 2)    // SNAPSHOT — price at order time
+  total      Decimal   @db.Decimal(12, 2)
+  productId  String
+  product    Product   @relation(fields: [productId], references: [id])
+  variantId  String?
+  orderId    String
+  order      Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([productId])
+  @@map("order_items")
+}
+
+model Payment {
+  id              String        @id @default(cuid())
+  orderId         String
+  order           Order         @relation(fields: [orderId], references: [id])
+  storeId         String
+  amount          Decimal       @db.Decimal(12, 2)
+  currency        String        @default("NGN")
+  provider        PaymentProvider
+  providerRef     String        @unique   // Paystack transaction reference
+  idempotencyKey  String        @unique   // client-generated UUID per payment attempt
+  status          PaymentStatus2
+  rawResponse     Json?                   // full provider payload — for disputes
+  processedAt     DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([orderId])
+  @@index([storeId])
+  @@index([idempotencyKey])
+  @@map("payments")
+}
+
+enum PaymentProvider { 
+  PAYSTACK 
+  BANK_TRANSFER 
+  MANUAL 
+}
+enum PaymentStatus2  {
+  PENDING 
+  SUCCESS 
+  FAILED 
+  REFUNDED 
+}
+
+model Webhook {
+  id          String    @id @default(cuid())
+  storeId     String
+  event       String              // "order.created", "payment.received"
+  url         String              // merchant's configured endpoint
+  payload     Json
+  status      WebhookStatus @default(PENDING)
+  attempts    Int         @default(0)
+  maxAttempts Int         @default(5)
+  nextRetryAt DateTime?
+  lastError   String?
+  deliveredAt DateTime?
+  createdAt   DateTime    @default(now())
+
+  @@index([storeId, status])
+  @@index([nextRetryAt])
+  @@map("webhooks")
+}
+
+enum WebhookStatus { 
+  PENDING
+  DELIVERED
+  FAILED
+  ABANDONED
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  type      String              // "ORDER_PLACED", "LOW_STOCK", "PAYMENT_RECEIVED"
+  title     String
+  body      String
+  read      Boolean   @default(false)
+  storeId   String
+  store     Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  orderId   String?
+  order     Order?    @relation(fields: [orderId], references: [id])
+  createdAt DateTime  @default(now())
+
+  @@index([storeId, read])
+  @@map("notifications")
+}
+
+model EmailLog {
+  id         String    @id @default(cuid())
+  to         String
+  subject    String
+  template   String
+  status     EmailStatus @default(QUEUED)
+  providerId String?             // Resend message ID
+  error      String?
+  storeId    String?
+  orderId    String?
+  createdAt  DateTime  @default(now())
+
+  @@index([storeId])
+  @@map("email_logs")
+}
+
+enum EmailStatus { 
+  QUEUED
+  SENT
+  FAILED
+  BOUNCED
+}
+
+model AuditLog {
+  id          String    @id @default(cuid())
+  action      String              // "PRODUCT_DELETED", "ORDER_CANCELLED", "STORE_SUSPENDED"
+  entityType  String              // "Product", "Order", "Store"
+  entityId    String
+  storeId     String?
+  store       Store?    @relation(fields: [storeId], references: [id])
+  userId      String?
+  user        User?     @relation(fields: [userId], references: [id])
+  performedBy String              // userId or "system" or customerId
+  ipAddress   String?
+  userAgent   String?
+  before      Json?               // entity state before change
+  after       Json?               // entity state after change
+  createdAt   DateTime  @default(now())
+
+  @@index([storeId, createdAt])
+  @@index([entityType, entityId])
+  @@map("audit_logs")
 }

@@ -1,6 +1,7 @@
 import "dotenv/config";
 import express from "express";
 import { prisma } from "./config/db.ts";
+import { globalErrorHandler } from "./middlewares/errorHandler.ts";
 const app = express();
 
 // ======================
@@ -29,4 +30,6 @@ app.get("/health", async (req, res) => {
     });
   }
 });
+
+app.use(globalErrorHandler);
 export default app;
