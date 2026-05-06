@@ -1,5 +1,5 @@
 import jwt from "jsonwebtoken";
-import AppError from "../utils/appError";
+import { AppError, forbidden, unauthorized } from "../utils/appError";
 import { catchAsync } from "../utils/catchAsync";
 import { prisma } from "../config/db";
 import { createRequestLogger } from "../middlewares/logger";
@@ -24,7 +24,7 @@ export const protect = catchAsync(
         userAgent: req.get("User-Agent"),
       });
       return next(
-        new AppError("You are not logged in. Please log in to get access", 401),
+        unauthorized("You are not logged in. Please log in to get access"),
       );
     }
 
@@ -48,10 +48,7 @@ export const protect = catchAsync(
           userId: decoded.id,
         });
         return next(
-          new AppError(
-            "Your account has been deactivated. Contact support.",
-            403,
-          ),
+          forbidden("Your account has been deactivated. Contact support."),
         );
       }
       req.user = user;
@@ -78,6 +75,42 @@ export const protect = catchAsync(
       userAgent: req.get("User-Agent"),
       userId: decoded.id,
     });
-    return next(new AppError("User not found. Access denied.", 401));
+    log.error("Authentication failed: user not found in any table", {
+      userId: decoded.id,
+    });
+    return next(unauthorized("User not found. Access denied."));
   },
 );
+
+export const restrictTo = (...allowedRoles: string[]) =>
+  catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    const log = createRequestLogger(req);
+
+    if (!req.user) {
+      log.warn("Access restricted: user not authenticated");
+      return next(
+        unauthorized("You do not have permission to perform this action"),
+      );
+    }
+    if (req.userType === "customer") {
+      return next(
+        unauthorized("You do not have permission to perform this action"),
+      );
+    }
+    let userRole: string | undefined;
+    if (req.userType === "user") {
+      const dbUser = req.user as { role: string };
+      userRole = dbUser.role;
+    }
+    if (!userRole || !allowedRoles.includes(userRole)) {
+      log.warn("Access restricted: insufficient permissions", {
+        userRole,
+        allowedRoles,
+      });
+      return next(
+        unauthorized("You do not have permission to perform this action"),
+      );
+    }
+
+    next();
+  });

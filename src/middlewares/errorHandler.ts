@@ -1,7 +1,7 @@
 import type { Request, Response, NextFunction } from "express";
 import { Prisma } from "../generated/prisma";
 import type { JsonWebTokenError, TokenExpiredError } from "jsonwebtoken";
-import AppError from "../utils/appError";
+import { AppError } from "../utils/appError";
 import { logger } from "./logger";
 
 // ─── Dev response — include everything ───────────────────────────────────────

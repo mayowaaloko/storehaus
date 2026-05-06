@@ -1,6 +1,7 @@
 // src/config/redis.ts
 
-import Redis from "ioredis";
+import type { RedisClientType } from "redis";
+import { createClient } from "redis";
 import "dotenv/config";
 
 // ─── Create the Redis client ──────────────────────────────────────────────────
@@ -13,15 +14,16 @@ import "dotenv/config";
 //                           before throwing. Prevents a single blip
 //                           from crashing a request.
 
-const client = new Redis(process.env.REDIS_URL || "", {
-  lazyConnect: true,
-  maxRetriesPerRequest: 3,
-  enableReadyCheck: true,
-  retryStrategy(times) {
-    // Exponential backoff: 1s, 2s, 4s, 8s... up to 30s max
-    // Redis will keep trying to reconnect automatically on disconnect
-    const delay = Math.min(1000 * 2 ** times, 30_000);
-    return delay;
+let client: RedisClientType;
+client = createClient({
+  url: process.env.REDIS_URL,
+  socket: {
+    reconnectStrategy: (retries) => {
+      const delay = Math.min(1000 * 2 ** retries, 30_000);
+      return delay;
+    },
+    connectTimeout: 10000,
+    tls: true,
   },
 });
 
@@ -32,7 +34,6 @@ const client = new Redis(process.env.REDIS_URL || "", {
 // The app must work without Redis — it just won't be cached.
 
 let isConnected = false;
-
 client.on("connect", () => {
   isConnected = true;
   console.log("[Redis] Connected");
@@ -62,7 +63,9 @@ client.on("reconnecting", () => {
 
 export async function connectRedis(): Promise<void> {
   try {
-    await client.connect();
+    if (!client.isOpen) {
+      await client.connect();
+    }
   } catch (err) {
     // Not fatal — app starts without Redis, just no caching
     console.warn(
@@ -74,8 +77,10 @@ export async function connectRedis(): Promise<void> {
 // ─── Disconnect function (called in graceful shutdown) ────────────────────────
 
 export async function disconnectRedis(): Promise<void> {
-  await client.quit();
-  console.log("[Redis] Disconnected cleanly");
+  if (client.isOpen) {
+    await client.quit();
+    console.log("[Redis] Disconnected cleanly");
+  }
 }
 
 // ─── Cache helpers ────────────────────────────────────────────────────────────
@@ -119,8 +124,8 @@ export const cache = {
   async set(key: string, value: unknown, ttlSeconds: number): Promise<void> {
     if (!isConnected) return;
     try {
-      // SETEX = SET + EXpiry in one atomic command
-      await client.setex(key, ttlSeconds, JSON.stringify(value));
+      // SET = SET + EXpiry in one atomic command
+      await client.set(key, JSON.stringify(value), { EX: ttlSeconds });
     } catch (err) {
       console.error(`[Redis] SET error for key "${key}":`, err);
     }
@@ -157,26 +162,21 @@ export const cache = {
   async delByPrefix(prefix: string): Promise<void> {
     if (!isConnected) return;
     try {
-      // SCAN returns a cursor and a batch of matching keys.
-      // We keep scanning until cursor returns to "0" (full loop complete).
       let cursor = "0";
       const keysToDelete: string[] = [];
 
       do {
-        const [nextCursor, keys] = await client.scan(
-          cursor,
-          "MATCH",
-          `${prefix}*`,
-          "COUNT",
-          100, // scan 100 keys per iteration — non-blocking
-        );
-        cursor = nextCursor;
-        keysToDelete.push(...keys);
+        const result = await client.scan(cursor, {
+          MATCH: `${prefix}*`,
+          COUNT: 100,
+        });
+
+        cursor = result.cursor;
+        keysToDelete.push(...result.keys);
       } while (cursor !== "0");
 
       if (keysToDelete.length > 0) {
-        // DEL accepts multiple keys — delete all at once
-        await client.del(...keysToDelete);
+        await client.del(keysToDelete); // ← Pass array, not spread
       }
     } catch (err) {
       console.error(`[Redis] DEL BY PREFIX error for prefix "${prefix}":`, err);
@@ -222,13 +222,10 @@ export const cache = {
   ): Promise<boolean> {
     if (!isConnected) return true; // if Redis is down, allow through (degrade gracefully)
     try {
-      const result = await client.set(
-        key,
-        JSON.stringify(value),
-        "EX",
-        ttlSeconds,
-        "NX", // only set if not exists
-      );
+      const result = await client.set(key, JSON.stringify(value), {
+        EX: ttlSeconds,
+        NX: true, // only set if not exists
+      });
       return result === "OK"; // 'OK' = key was set (we won the lock), null = already existed
     } catch (err) {
       console.error(`[Redis] SET NX error for key "${key}":`, err);
