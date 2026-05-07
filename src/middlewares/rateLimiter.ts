@@ -17,6 +17,7 @@
 // rate limiting still works, just not shared across instances.
 import "dotenv/config";
 import rateLimit from "express-rate-limit";
+import { ipKeyGenerator } from "express-rate-limit";
 import { RedisStore } from "rate-limit-redis";
 import type { RedisReply } from "rate-limit-redis";
 import type { Request, Response, NextFunction } from "express";
@@ -36,8 +37,8 @@ import { redisClient } from "../config/redis";
 function createRedisStore(prefix: string): RedisStore {
   return new RedisStore({
     // rate-limit-redis uses sendCommand to talk to ioredis
-    sendCommand: async (...args: string[]): Promise<RedisReply> => {
-      return (await redisClient.call(...args)) as RedisReply;
+    sendCommand: async (...args: string[]) => {
+      return await redisClient.sendCommand(args);
     },
     prefix: `rl:${prefix}:`,
   });
@@ -143,7 +144,8 @@ export const storeLimiter = rateLimit({
   keyGenerator: (req: Request): string => {
     // req.store is set by tenantMiddleware which runs before this
     // Fall back to IP if store isn't resolved yet (shouldn't happen in normal flow)
-    return req.store?.id ?? req.ip ?? "unknown";
+    if (req.store?.id) return `store:${req.store.id}`;
+    return ipKeyGenerator(req.ip ?? "127.0.0.1");
   },
 
   handler: (_req: Request, res: Response) => {

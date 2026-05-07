@@ -1,7 +1,8 @@
-import "dotenv/config";
 import express from "express";
 import { prisma } from "./config/db.ts";
 import { globalErrorHandler } from "./middlewares/errorHandler.ts";
+import { generalLimiter } from "./middlewares/rateLimiter.ts";
+import auth from "./routes/auth.routes.ts";
 const app = express();
 
 // ======================
@@ -13,7 +14,7 @@ app.use(express.urlencoded({ extended: true }));
 // ======================
 // Health check route
 // ======================
-
+app.use(generalLimiter);
 app.get("/health", async (req, res) => {
   try {
     // Simple DB health check
@@ -30,6 +31,6 @@ app.get("/health", async (req, res) => {
     });
   }
 });
-
+app.use("/api/v1/auth", auth);
 app.use(globalErrorHandler);
 export default app;

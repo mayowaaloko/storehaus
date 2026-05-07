@@ -111,7 +111,7 @@ model RefreshToken {
   tokenHash String @unique
   userId String?
   user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
-  storeId String //this is for the super admin to login to the store
+  storeId String? //this is for the super admin to login to the store
   customerId String?
   customer StoreCustomer? @relation(fields: [customerId], references: [id], onDelete: Cascade) //this is for the customer to login to the store
   family String

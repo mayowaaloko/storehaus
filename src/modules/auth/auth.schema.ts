@@ -17,8 +17,8 @@ const passwordRules = z
 
 export const registerSchema = z
   .object({
-    firstname: z.string(),
-    lastname: z.string(),
+    firstName: z.string(),
+    lastName: z.string(),
     email: z.email(),
     password: passwordRules,
     confirmPassword: passwordRules,
@@ -27,11 +27,11 @@ export const registerSchema = z
     error: "The passwords you have given do not match. Please try again.",
     path: ["confirmPassword"],
   })
-  .refine((data) => !data.password.includes(data.firstname), {
+  .refine((data) => !data.password.includes(data.firstName), {
     error: "Password should not contain your first name.",
     path: ["password"],
   })
-  .refine((data) => !data.password.includes(data.lastname), {
+  .refine((data) => !data.password.includes(data.lastName), {
     error: "Password should not contain your last name.",
     path: ["password"],
   });

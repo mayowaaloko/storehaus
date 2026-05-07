@@ -15,16 +15,19 @@ import "dotenv/config";
 //                           from crashing a request.
 
 let client: RedisClientType;
+const isProduction = process.env.NODE_ENV === "production";
 client = createClient({
   url: process.env.REDIS_URL,
-  socket: {
-    reconnectStrategy: (retries) => {
-      const delay = Math.min(1000 * 2 ** retries, 30_000);
-      return delay;
-    },
-    connectTimeout: 10000,
-    tls: true,
-  },
+  socket: isProduction
+    ? {
+        reconnectStrategy: (retries) => Math.min(1000 * 2 ** retries, 30_000),
+        connectTimeout: 10000,
+        tls: true,
+      }
+    : {
+        reconnectStrategy: (retries) => Math.min(1000 * 2 ** retries, 30_000),
+        connectTimeout: 10000,
+      },
 });
 
 // ─── Connection state ─────────────────────────────────────────────────────────
@@ -161,22 +164,20 @@ export const cache = {
 
   async delByPrefix(prefix: string): Promise<void> {
     if (!isConnected) return;
+
     try {
-      let cursor = "0";
       const keysToDelete: string[] = [];
 
-      do {
-        const result = await client.scan(cursor, {
-          MATCH: `${prefix}*`,
-          COUNT: 100,
-        });
-
-        cursor = result.cursor;
-        keysToDelete.push(...result.keys);
-      } while (cursor !== "0");
+      for await (const keys of client.scanIterator({
+        MATCH: `${prefix}*`,
+        COUNT: 100,
+      })) {
+        keysToDelete.push(...keys);
+      }
 
       if (keysToDelete.length > 0) {
-        await client.del(keysToDelete); // ← Pass array, not spread
+        // Pass the flat array directly (not spread)
+        await client.unlink(keysToDelete);
       }
     } catch (err) {
       console.error(`[Redis] DEL BY PREFIX error for prefix "${prefix}":`, err);
