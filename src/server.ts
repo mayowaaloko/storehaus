@@ -42,7 +42,6 @@ const gracefulShutdown = async (server: Server | null, reason: string) => {
 const startServer = async () => {
   let server: Server | null = null;
 
-  // Register process event handlers early so nothing is missed
   process.on("uncaughtException", async (err) => {
     console.error("❌ Uncaught Exception:", err);
     await gracefulShutdown(server, "Uncaught Exception");
