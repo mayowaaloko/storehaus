@@ -2,7 +2,8 @@ import express from "express";
 import { prisma } from "./config/db.ts";
 import { globalErrorHandler } from "./middlewares/errorHandler.ts";
 import { generalLimiter } from "./middlewares/rateLimiter.ts";
-import auth from "./routes/auth.routes.ts";
+import authRoutes from "./routes/auth.routes.ts";
+import storeRoutes from "./routes/store.routes.ts";
 const app = express();
 
 // ======================
@@ -31,6 +32,7 @@ app.get("/health", async (req, res) => {
     });
   }
 });
-app.use("/api/v1/auth", auth);
+app.use("/api/v1/auth", authRoutes);
+app.use("/api/v1/stores", storeRoutes);
 app.use(globalErrorHandler);
 export default app;
