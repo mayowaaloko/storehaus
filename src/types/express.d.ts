@@ -11,7 +11,7 @@ declare global {
       requestId: string;
 
       /** Current store context */
-      store: Pick<Store, "id"> | null;
+      store: Pick<Store, "id" | "active" | "ownerId"> | null;
 
       /** Current logged in person - can be either Merchant/Admin or Customer */
       user?: User | StoreCustomer;

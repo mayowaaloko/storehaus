@@ -3,16 +3,17 @@ import jwt from "jsonwebtoken";
 import { prisma } from "../config/db";
 import crypto from "crypto";
 import type { StringValue } from "ms";
-import type { Request, Response, NextFunction } from "express";
 
 interface TokenUser {
   id: string;
   role: string;
+  storeId?: string;
 }
 type TokenOwnerType = "user" | "customer";
 
 const JWT_SECRET = process.env.JWT_ACCESS_SECRET;
 const JWT_ACCESS_EXPIRES_IN = process.env.JWT_ACCESS_EXPIRES_IN as StringValue;
+
 export const generateAccessToken = (user: TokenUser) => {
   const token = jwt.sign(
     {
@@ -24,46 +25,30 @@ export const generateAccessToken = (user: TokenUser) => {
     {
       expiresIn: JWT_ACCESS_EXPIRES_IN,
     },
-  );
-  // res.cookie("jwt", token, {
-  //   httpOnly: true,
-  //   secure: process.env.NODE_ENV === "production",
-  //   sameSite: process.env.NODE_ENV == "production" ? "none" : "strict",
-  //   maxAge: 15 * 60 * 1000,
-  // });
-
+  ); // sign jwt access token
   return token;
 };
 
 export const generateRefreshToken = async (
   ownerId: string,
   ownerType: TokenOwnerType,
-  storeId?: string,
-  // res: Response,
   family?: string,
 ): Promise<{ token: string; family: string }> => {
-  const token = crypto.randomBytes(64).toString("hex");
-  const tokenFamily = family ?? crypto.randomUUID();
-  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+  const token = crypto.randomBytes(64).toString("hex"); // generate random refresh token
+  const hashedToken = crypto.createHash("sha256").update(token).digest("hex"); // hash it
+  const tokenFamily = family ?? crypto.randomUUID(); // use existing or new family
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days expiry
 
   await prisma.refreshToken.create({
     data: {
-      tokenHash: token,
+      tokenHash: hashedToken,
       family: tokenFamily,
-      storeId,
       expiresAt,
       ...(ownerType === "user"
         ? { userId: ownerId, customerId: null }
         : { customerId: ownerId, userId: null }),
     },
-  });
-
-  // res.cookie("refreshToken", token, {
-  //   httpOnly: true,
-  //   secure: process.env.NODE_ENV === "production",
-  //   sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
-  //   maxAge: 30 * 24 * 60 * 60 * 1000,
-  // });
+  }); // save to db
 
   return {
     token,
@@ -72,23 +57,23 @@ export const generateRefreshToken = async (
 };
 
 export const generateTemporaryToken = async () => {
-  const emailToken = crypto.randomBytes(32).toString("hex");
+  const emailToken = crypto.randomBytes(32).toString("hex"); // plain token
   const hashedToken = crypto
     .createHash("sha256")
     .update(emailToken)
-    .digest("hex");
-  const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+    .digest("hex"); // hashed version
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
 
   return { hashedToken, emailToken, expiresAt };
 };
 
 export const generateResetToken = async () => {
-  const resetToken = crypto.randomBytes(32).toString("hex");
+  const resetToken = crypto.randomBytes(32).toString("hex"); // plain reset token
   const hashedResetToken = crypto
     .createHash("sha256")
     .update(resetToken)
-    .digest("hex");
-  const resetTokenExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
+    .digest("hex"); // hashed
+  const resetTokenExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
   return { hashedResetToken, resetToken, resetTokenExpiresAt };
 };

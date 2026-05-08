@@ -14,17 +14,15 @@ import {
   generateTemporaryToken,
   generateResetToken,
 } from "../../utils/jwt";
-import { verify, generateURI, generateSecret, generate } from "otplib";
+import { verify } from "otplib";
 import { logger } from "../../middlewares/logger";
 import { comparePassword, hashPassword } from "../../utils/password";
 import { cache } from "../../config/redis";
+
 // ─── Constants ───
 const MAX_FAILED_ATTEMPTS = 5; // lock account after 5 wrong passwords
 const LOCK_DURATION_MINUTES = 30; // locked for 30 minutes
-const RESET_TOKEN_EXPIRES_MINUTES = 60;
-const VERIFY_TOKEN_EXPIRES_HOURS = 24;
-
-// TYPES
+const RESET_TOKEN_EXPIRES_MINUTES = 10; // reset token expiry
 
 interface AuthTokens {
   accessToken: string;
@@ -40,39 +38,25 @@ interface MerchantRegisterInput {
   phoneNumber?: string;
 }
 
-interface CustomerRegisterInput {
-  email: string;
-  password: string;
-  firstName: string;
-  lastName: string;
-  phoneNumber?: string;
-  storeId: string;
-}
 export const AuthService = {
   // REGISTER MERCHANT
   async registerMerchant(input: MerchantRegisterInput) {
-    const { email, password, firstName, lastName, phoneNumber } = input;
+    const { email, password, firstName, lastName, phoneNumber } = input; // destructure input
 
-    // normalize the email
-    const normalizedEmail = input.email.toLowerCase();
+    const normalizedEmail = input.email.toLowerCase(); // normalize email to lowercase
 
-    // check if user already exists
     const existingUser = await prisma.user.findUnique({
-      where: {
-        email: normalizedEmail,
-      },
-    });
+      where: { email: normalizedEmail },
+    }); // check if user exists
     if (existingUser) {
-      throw notFound("User with this email already exists");
+      throw notFound("User with this email already exists"); // throw if duplicate
     }
-    // hash password
-    const hashedPassword = await hashPassword(password);
 
-    // email verification
+    const hashedPassword = await hashPassword(password); // hash the password
+
     const { emailToken, hashedToken, expiresAt } =
-      await generateTemporaryToken();
+      await generateTemporaryToken(); // generate verification token
 
-    // create a new user
     const user = await prisma.user.create({
       data: {
         email: normalizedEmail,
@@ -92,9 +76,10 @@ export const AuthService = {
         role: true,
         createdAt: true,
       },
-    });
-    logger.info("Merchant registered", { userId: user.id, email: user.email });
-    return { user, emailToken };
+    }); // create user in db
+
+    logger.info("Merchant registered", { userId: user.id, email: user.email }); // log registration
+    return { user, emailToken }; // return user and plain token
   },
 
   async loginMerchant(
@@ -102,32 +87,31 @@ export const AuthService = {
     password: string,
     twoFactorCode: string | undefined,
   ): Promise<AuthTokens & { user: object }> {
-    // find user by email
     const user = await prisma.user.findUnique({
       where: { email },
-    });
+    }); // find user by email
     if (!user) {
-      throw unauthorized("Invalid credentials");
+      throw unauthorized("Invalid credentials"); // invalid email
     }
-    // check if account is locked
+
     if (user.lockedUntil && user.lockedUntil > new Date()) {
       const minuteLeft = Math.ceil(
         (user.lockedUntil.getTime() - new Date().getTime()) / (1000 * 60),
-      );
+      ); // calculate remaining lock time
       logger.info("Account is locked", { userId: user.id, minuteLeft });
       throw locked(`Account is locked. Try again in ${minuteLeft} minutes`);
     }
-    // check if account is active
+
     if (!user.isActive) {
       logger.info("Account is inactive", { userId: user.id });
       throw notFound("Your account has been deactivated. Contact support.");
     }
-    // check if password is correct
-    const passwordValid = await comparePassword(password, user.password);
+
+    const passwordValid = await comparePassword(password, user.password); // check password
     if (!passwordValid) {
-      // increment failed attempts
       const newFailedAttempts = user.failedLoginAttempts + 1;
       const shouldLock = newFailedAttempts >= MAX_FAILED_ATTEMPTS;
+
       await prisma.user.update({
         where: { id: user.id },
         data: {
@@ -136,14 +120,15 @@ export const AuthService = {
             ? new Date(Date.now() + LOCK_DURATION_MINUTES * 60 * 1000)
             : null,
         },
-      });
+      }); // update failed attempts
 
       if (shouldLock) {
         logger.warn("Merchant account locked after failed attempts", { email });
         throw locked("Account locked due to multiple failed attempts");
       }
+      throw unauthorized("Invalid credentials"); // wrong password
     }
-    // 2FA check
+
     if (user.twofactorEnabled) {
       if (!user.twofactorSecret || !twoFactorCode) {
         throw serverError(
@@ -153,24 +138,24 @@ export const AuthService = {
       const result = await verify({
         secret: user.twofactorSecret as string,
         token: twoFactorCode as string,
-      });
+      }); // verify 2fa code
       if (!result.valid) {
         logger.warn("Invalid 2FA code", { email });
         throw unauthorized("Your 2FA code is invalid");
       }
     }
 
-    // Reset failed attempts on successful login
     if (user.failedLoginAttempts > 0) {
       await prisma.user.update({
         where: { id: user.id },
         data: { failedLoginAttempts: 0, lockedUntil: null },
-      });
+      }); // reset failed attempts
     }
-    // generate token
-    const accessToken = generateAccessToken(user);
-    const { token, family } = await generateRefreshToken(user.id, "user");
-    logger.info("Merchant logged in", { userId: user.id, email });
+
+    const accessToken = generateAccessToken(user); // generate access token
+    const { token, family } = await generateRefreshToken(user.id, "user"); // generate refresh token
+
+    logger.info("Merchant logged in", { userId: user.id, email }); // log login
     return {
       accessToken,
       refreshToken: token,
@@ -188,19 +173,19 @@ export const AuthService = {
   },
 
   async verifyMerchantEmail(token: string) {
-    // hash the token
-    const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
-    // find the user with the hashed token
+    const hashedToken = crypto.createHash("sha256").update(token).digest("hex"); // hash token
+
     const user = await prisma.user.findFirst({
       where: {
         emailVerificationToken: hashedToken,
-        emailVerificationTokenExpiresAt: { gt: new Date() }, // not expired
+        emailVerificationTokenExpiresAt: { gt: new Date() },
         isEmailVerified: false,
       },
-    });
+    }); // find user with valid token
     if (!user) {
       throw notFound("Invalid or expired verification link");
     }
+
     await prisma.user.update({
       where: { id: user.id },
       data: {
@@ -208,108 +193,97 @@ export const AuthService = {
         emailVerificationToken: null,
         emailVerificationTokenExpiresAt: null,
       },
-    });
+    }); // mark as verified
     logger.info("Merchant email verified", {
       userId: user.id,
       email: user.email,
     });
   },
+
   async resendEmailVerification(email: string) {
-    // check if the user exists
     const user = await prisma.user.findUnique({
       where: { email },
-    });
+    }); // find user
     if (!user) {
       throw notFound("User not found");
     }
-    // check if the user is already verified
     if (user.isEmailVerified) {
       throw badRequest("Your email is already verified.Please log in");
     }
-    // generate a new token
+
     const { emailToken, hashedToken, expiresAt } =
-      await generateTemporaryToken();
-    user.emailVerificationToken = hashedToken;
-    user.emailVerificationTokenExpiresAt = expiresAt;
+      await generateTemporaryToken(); // new token
+
     await prisma.user.update({
       where: { id: user.id },
       data: {
         emailVerificationToken: hashedToken,
         emailVerificationTokenExpiresAt: expiresAt,
       },
-    });
-    return { emailToken };
+    }); // update token in db
+
+    return { emailToken }; // return plain token
   },
+
   async refreshMerchantToken(
     refreshToken: string,
     refreshTokenFamily: string,
   ): Promise<AuthTokens> {
-    // hash incoming token
     const hashedToken = crypto
       .createHash("sha256")
       .update(refreshToken)
-      .digest("hex");
+      .digest("hex"); // hash incoming token
 
-    // find the token in DB
     const storedToken = await prisma.refreshToken.findUnique({
       where: { tokenHash: hashedToken },
-    });
+    }); // find stored token
 
-    // token not found
     if (!storedToken) {
       throw unauthorized("Invalid or expired refresh token");
     }
 
-    // ensure token belongs to same family
     if (storedToken.family !== refreshTokenFamily) {
       throw unauthorized("Invalid refresh token family");
     }
 
-    // check if token is expired
     if (storedToken.expiresAt < new Date()) {
       throw unauthorized("Refresh token expired");
     }
 
-    // check reuse / compromise
     if (storedToken.used || storedToken.revoked) {
       logger.warn("Refresh token reuse detected — revoking token family", {
         family: storedToken.family,
         userId: storedToken.userId,
       });
 
-      // revoke entire family (invalidate all sessions for this device)
       await prisma.refreshToken.updateMany({
         where: { family: storedToken.family },
         data: { revoked: true },
-      });
+      }); // revoke family
 
       throw unauthorized("Refresh token reuse detected");
     }
 
-    // mark current token as used (rotation step)
     await prisma.refreshToken.update({
       where: { id: storedToken.id },
       data: { used: true },
-    });
+    }); // mark as used
 
-    // get the user linked to this token
     const user = await prisma.user.findUnique({
       where: { id: storedToken.userId! },
-    });
+    }); // get user
 
     if (!user) {
       throw unauthorized("User not found");
     }
 
-    // generate new access token
-    const accessToken = generateAccessToken(user);
-
-    // generate new refresh token (same family = rotation)
+    const accessToken = generateAccessToken(user); // new access
     const { token: newRefreshToken, family } = await generateRefreshToken(
       user.id,
       "user",
+      undefined,
       storedToken.family,
-    );
+    ); // rotate refresh token
 
     logger.info("Merchant access token refreshed", {
       userId: user.id,
@@ -322,45 +296,45 @@ export const AuthService = {
       refreshTokenFamily: family,
     };
   },
+
   async logoutMerchant(
     refreshToken: string,
     refreshTokenFamily: string,
   ): Promise<void> {
-    // hash incoming token
     const hashedToken = crypto
       .createHash("sha256")
       .update(refreshToken)
-      .digest("hex");
-    // find the token in DB
+      .digest("hex"); // hash token
+
     const storedToken = await prisma.refreshToken.findUnique({
       where: { tokenHash: hashedToken },
-    });
+    }); // find token
     if (!storedToken) return;
+
     await prisma.refreshToken.update({
       where: { id: storedToken.id },
       data: { revoked: true },
-    });
-    logger.info("Merchant logged out", { family: refreshTokenFamily });
-    // add to redis blocklist so the refresh token cannot be used again
-    await cache.set(`token:revoked:${storedToken.userId}`, true, 15 * 60);
+    }); // revoke token
+
+    await cache.set(`token:revoked:${storedToken.userId}`, true, 15 * 60); // blocklist
     await cache.set(
       `token:family:${storedToken.userId}`,
       storedToken.family,
       15 * 60,
     );
+
     logger.info("Merchant logged out and token blocked", {
       family: refreshTokenFamily,
       userId: storedToken.userId,
     });
   },
+
   async forgotMerchantPassword(email: string): Promise<string | null> {
-    // find the user in the database
-    const user = await prisma.user.findUnique({ where: { email } });
+    const user = await prisma.user.findUnique({ where: { email } }); // find user
     if (!user) return null;
 
-    // generate reset token
     const { hashedResetToken, resetToken, resetTokenExpiresAt } =
-      await generateResetToken();
+      await generateResetToken(); // generate reset token
 
     await prisma.user.update({
       where: { id: user.id },
@@ -368,29 +342,30 @@ export const AuthService = {
         resetToken: hashedResetToken,
         resetTokenExpiresAt: resetTokenExpiresAt,
       },
-    });
-    // send email to user with password reset link
+    }); // save hashed token
+
     logger.info("Password reset token generated for user", {
       userId: user.id,
       email,
     });
-    return resetToken;
+    return resetToken; // return plain token for email
   },
-  async resetMerchantPassword(token: string, newPassword: String) {
-    // hash the token
-    const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
-    // find user with this token
+
+  async resetMerchantPassword(token: string, newPassword: string) {
+    const hashedToken = crypto.createHash("sha256").update(token).digest("hex"); // hash token
+
     const user = await prisma.user.findFirst({
       where: {
         resetToken: hashedToken,
         resetTokenExpiresAt: { gt: new Date() },
       },
-    });
+    }); // find valid token
     if (!user) {
       throw notFound("Invalid or expired reset link");
     }
-    // hash the new password
-    const hashedPassword = await hashPassword(newPassword.toString());
+
+    const hashedPassword = await hashPassword(newPassword); // hash new password
+
     await prisma.user.update({
       where: { id: user.id },
       data: {
@@ -400,22 +375,70 @@ export const AuthService = {
         failedLoginAttempts: 0,
         lockedUntil: null,
       },
-    });
-    // Revoke all existing refresh tokens — forces re-login on all devices
+    }); // update password
+
     await prisma.refreshToken.updateMany({
       where: { userId: user.id },
       data: { revoked: true },
-    });
+    }); // revoke all sessions
+
     logger.info("Merchant password reset", {
       userId: user.id,
       email: user.email,
     });
-    // generate a token to login automatically
-    const accessToken = generateAccessToken(user);
+
+    const accessToken = generateAccessToken(user); // new login tokens
     const { token: refreshToken, family } = await generateRefreshToken(
       user.id,
       "user",
     );
+
     return { accessToken, refreshToken, refreshTokenFamily: family };
+  },
+
+  async updateMerchantPassword(
+    userId: string,
+    oldPassword: string,
+    newPassword: string,
+  ): Promise<{
+    accessToken: string;
+    refreshToken: string;
+    refreshTokenFamily: string;
+  }> {
+    const user = await prisma.user.findUnique({ where: { id: userId } }); // find user
+    if (!user) {
+      throw notFound("User not found");
+    }
+
+    const isOldPasswordValid = await comparePassword(
+      oldPassword,
+      user.password,
+    ); // verify old password
+    if (!isOldPasswordValid) {
+      throw unauthorized("Current password is incorrect");
+    }
+
+    const hashedPassword = await hashPassword(newPassword); // hash new password
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { password: hashedPassword },
+    }); // update password
+
+    await prisma.refreshToken.updateMany({
+      where: { userId: user.id },
+      data: { revoked: true },
+    }); // revoke old sessions
+
+    logger.info("Merchant password updated", { userId: user.id });
+
+    const newToken = generateAccessToken(user); // new tokens
+    const { token, family } = await generateRefreshToken(user.id, "user");
+
+    return {
+      accessToken: newToken,
+      refreshToken: token,
+      refreshTokenFamily: family,
+    };
   },
 };

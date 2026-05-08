@@ -86,30 +86,33 @@ export const restrictTo = (...allowedRoles: string[]) =>
   catchAsync(async (req: Request, res: Response, next: NextFunction) => {
     const log = createRequestLogger(req);
 
-    if (!req.user) {
-      log.warn("Access restricted: user not authenticated");
+    if (!req.user || !req.userType) {
+      log.warn("Access restricted: no user data");
       return next(
         unauthorized("You do not have permission to perform this action"),
       );
     }
+
+    // Block all customers
     if (req.userType === "customer") {
       return next(
         unauthorized("You do not have permission to perform this action"),
       );
     }
-    let userRole: string | undefined;
+
+    // For merchants/users
     if (req.userType === "user") {
-      const dbUser = req.user as { role: string };
-      userRole = dbUser.role;
-    }
-    if (!userRole || !allowedRoles.includes(userRole)) {
-      log.warn("Access restricted: insufficient permissions", {
-        userRole,
-        allowedRoles,
-      });
-      return next(
-        unauthorized("You do not have permission to perform this action"),
-      );
+      const role = (req.user as any).role;
+
+      if (!role || !allowedRoles.includes(role)) {
+        log.warn("Access restricted: insufficient role", {
+          userRole: role,
+          allowedRoles,
+        });
+        return next(
+          unauthorized("You do not have permission to perform this action"),
+        );
+      }
     }
 
     next();
