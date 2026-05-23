@@ -26,7 +26,7 @@ async function generateUniqueSlug(name: string): Promise<string> {
   for (let i = 1; i <= 5; i++) {
     const suffix = Math.random().toString(36).substring(2, 8);
     slug = `${baseSlug}-${suffix}`;
-    const existing = await prisma.store.findUnique({
+    existing = await prisma.store.findUnique({
       where: { slug: slug },
     });
     if (!existing) return slug;
@@ -35,16 +35,14 @@ async function generateUniqueSlug(name: string): Promise<string> {
   slug = `${baseSlug}-${Date.now()}`;
   // double check
   existing = await prisma.store.findUnique({ where: { slug: slug } });
-  if (!existing) {
-    logger.error("Failed to generate unique slug even with  timestamp", {
-      originalName: name,
-      baseSlug,
-    });
-    throw conflict(
-      "Could not generate a unique slug. Please try a different store name",
-    );
-  }
-  return slug;
+  if (!existing) return slug;
+  logger.error("Failed to generate unique slug after 5 attempts", {
+    originalName: name,
+    baseSlug,
+  });
+  throw conflict(
+    "Could not generatr a unique slug.Please try a different store name",
+  );
 }
 
 // ─── Service ──────────────────────────────────────────────────────────────────
@@ -127,6 +125,7 @@ export const storeService = {
     const store = await prisma.store.findUnique({
       where: {
         slug,
+        active: true,
       },
       select: {
         id: true,
@@ -157,12 +156,12 @@ export const storeService = {
     const updated = await prisma.store.update({
       where: { id: storeId },
       data: {
-        ...(input.name && { name: input.name }),
+        ...(input.name !== undefined && { name: input.name }),
         ...(input.description !== undefined && {
           description: input.description,
         }),
-        ...(input.logo && { logo: input.logo }),
-        ...(input.currency && { currency: input.currency }),
+        ...(input.logo !== undefined && { logo: input.logo }), // ✅ allow clearing
+        ...(input.currency !== undefined && { currency: input.currency }), // ✅ allow clearing
       },
       select: {
         id: true,

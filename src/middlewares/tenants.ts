@@ -3,7 +3,7 @@ import { prisma } from "../config/db";
 import { cache } from "../config/redis";
 import { catchAsync } from "../utils/catchAsync";
 import { forbidden, notFound } from "../utils/appError";
-import { boolean } from "zod";
+
 export const tenantMiddleware = catchAsync(
   async (req: Request, res: Response, next: NextFunction) => {
     // get the slug from the url params

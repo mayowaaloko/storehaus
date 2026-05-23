@@ -1,9 +1,10 @@
 import type { Request, Response, NextFunction } from "express";
 import { Prisma } from "../generated/prisma";
-import type { JsonWebTokenError, TokenExpiredError } from "jsonwebtoken";
+import jwt from "jsonwebtoken";
 import { AppError } from "../utils/appError";
 import { logger } from "./logger";
 
+const { JsonWebTokenError, TokenExpiredError } = jwt;
 // ─── Dev response — include everything ───────────────────────────────────────
 
 const sendDevError = (err: AppError, res: Response): void => {
