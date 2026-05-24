@@ -14,17 +14,16 @@
   "author": "",
   "type": "module",
   "main": "index.js",
-  "scripts": {
+"scripts": {
     "dev": "nodemon --exec tsx src/server.ts",
     "build": "rimraf dist && tsc",
     "start": "node dist/server.js",
     "db:push": "prisma db push",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
     "db:seed": "prisma db seed",
     "prisma:generate": "prisma generate",
     "prisma:studio": "prisma studio"
-  },
-  "prisma": {
-    "seed": "ts-node prisma/seed.ts"
   },
   "dependencies": {
     "@prisma/adapter-neon": "^7.8.0",

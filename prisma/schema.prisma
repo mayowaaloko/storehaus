@@ -163,6 +163,7 @@ model Product {
   name         String
   slug         String
   description  String?   @db.Text
+  stock     Int     @default(0)
   price        Decimal   @db.Decimal(12, 2)    // Decimal, not Float — no floating point errors
   comparePrice Decimal?  @db.Decimal(12, 2)
   sku          String?

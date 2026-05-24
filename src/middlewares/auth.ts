@@ -202,3 +202,12 @@ export const requireStoreOwner = catchAsync(
     next();
   },
 );
+
+export const requireCustomer = catchAsync(
+  async (req: Request, res: Response, next: NextFunction) => {
+    if (req.userType !== "customer") {
+      return next(forbidden("Only customers can perform this action"));
+    }
+    next();
+  },
+);

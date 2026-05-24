@@ -2,7 +2,8 @@ import express from "express";
 import { prisma } from "./config/db.ts";
 import { globalErrorHandler } from "./middlewares/errorHandler.ts";
 import { generalLimiter } from "./middlewares/rateLimiter.ts";
-import authRoutes from "./routes/auth.routes.ts";
+import merchantAuthRoutes from "./routes/auth.merchant.routes";
+import customerAuthRoutes from "./routes/auth.customer.routes";
 import storeRoutes from "./routes/store.routes.ts";
 const app = express();
 
@@ -32,7 +33,10 @@ app.get("/health", async (req, res) => {
     });
   }
 });
-app.use("/api/v1/auth", authRoutes);
+// Merchant auth — no store context
+app.use("/api/v1/auth", merchantAuthRoutes);
+// Customer auth — needs :slug for tenantMiddleware
+app.use("/api/v1/stores/:slug/auth", customerAuthRoutes);
 app.use("/api/v1/stores", storeRoutes);
 app.use(globalErrorHandler);
 export default app;
