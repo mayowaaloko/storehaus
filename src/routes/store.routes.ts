@@ -9,6 +9,10 @@ import { catchAsync } from "../utils/catchAsync";
 import { StoreController } from "../modules/stores/stores.controller";
 import { tenantMiddleware } from "../middlewares/tenants";
 
+import categoryRouter from "./categories.routes.ts"; // ← same routes/ folder
+// import productRouter from "./products.routes.ts";       // ← same routes/ folder
+// import orderRouter from "./orders.routes.ts";
+
 const router = express.Router();
 
 // Create a new store — merchant must be logged in
@@ -48,4 +52,10 @@ router
     requireStoreOwner,
     catchAsync(StoreController.deactivate),
   );
+
+// nested routers — mounted under /:slug
+router.use("/:slug/categories", tenantMiddleware, categoryRouter);
+// router.use("/:slug/products", tenantMiddleware, productRouter);
+// router.use("/:slug/orders", tenantMiddleware, orderRouter);
+
 export default router;
