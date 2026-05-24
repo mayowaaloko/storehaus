@@ -2,7 +2,7 @@ import express from "express";
 import { prisma } from "./config/db.ts";
 import { globalErrorHandler } from "./middlewares/errorHandler.ts";
 import { generalLimiter } from "./middlewares/rateLimiter.ts";
-import merchantAuthRoutes from "./routes/auth.merchant.routes";
+import merchantAuthRoutes from "./routes/auth.merchant.routes.ts";
 import customerAuthRoutes from "./routes/auth.customer.routes";
 import storeRoutes from "./routes/store.routes.ts";
 const app = express();

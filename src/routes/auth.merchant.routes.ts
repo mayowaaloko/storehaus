@@ -7,15 +7,12 @@ import { validate } from "../validators/validate";
 import {
   loginSchema,
   registerSchema,
-  resetPasswordSchema,
   updatePasswordSchema,
 } from "../modules/auth/auth.schema";
 import { AuthController } from "../modules/auth/auth.controller";
 import { authLimiter } from "../middlewares/rateLimiter";
 import { catchAsync } from "../utils/catchAsync";
-import { tenantMiddleware } from "../middlewares/tenants";
-
-const router = express.Router();
+const router = express.Router({ mergeParams: true });
 
 // ═══════════════════════════════════════════════════════════════════════════
 // MERCHANT AUTH (platform-level, no store context needed)
@@ -69,3 +66,5 @@ router
     validate(updatePasswordSchema),
     catchAsync(AuthController.updateMerchantPassword),
   );
+
+export default router;

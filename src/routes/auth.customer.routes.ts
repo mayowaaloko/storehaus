@@ -16,7 +16,7 @@ import { tenantMiddleware } from "../middlewares/tenants";
 // CUSTOMER AUTH (store-scoped, needs tenantMiddleware)
 // ═══════════════════════════════════════════════════════════════════════════
 // Mounted under /api/v1/stores/:slug so tenantMiddleware resolves req.store
-const router = express.Router();
+const router = express.Router({ mergeParams: true });
 router.route("/customer/register").post(
   authLimiter,
   tenantMiddleware, // resolves req.store from :slug

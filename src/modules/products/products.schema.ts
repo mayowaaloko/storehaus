@@ -11,6 +11,7 @@ export const createProductSchema = z
       .number({ error: "Price is required" })
       .positive("Price must be greater than 0")
       .multipleOf(0.01, "Price can have at most 2 decimal places"),
+    stock: z.number().int().min(0).default(0).optional(),
     comparePrice: z.number().positive().multipleOf(0.01).optional(),
     sku: z.string().max(100).optional(),
     barcode: z.string().max(100).optional(),
@@ -39,6 +40,7 @@ export const updateProductSchema = z.object({
   categoryId: z.cuid2().nullable().optional(),
   published: z.boolean().optional(),
   featured: z.boolean().optional(),
+  stock: z.number().int().min(0).default(0).optional(),
 });
 
 export const productQuerySchema = z.object({
