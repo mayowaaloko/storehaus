@@ -19,8 +19,8 @@ import "dotenv/config";
 import rateLimit from "express-rate-limit";
 import { ipKeyGenerator } from "express-rate-limit";
 import { RedisStore } from "rate-limit-redis";
-import type { RedisReply } from "rate-limit-redis";
-import type { Request, Response, NextFunction } from "express";
+
+import type { Request, Response } from "express";
 import { redisClient } from "../config/redis";
 
 // ─── Shared Redis store factory ───────────────────────────────────────────────
